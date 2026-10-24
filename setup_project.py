@@ -4,7 +4,11 @@
 Installs and bootstraps the 10-Agent Swarm framework into any new project folder.
 
 Usage:
-    python setup_project.py "C:\\path\\to\\new-project"
+    python setup_project.py "C:\\path\\to\\new-project" [--overwrite]
+
+Files and folders the framework would replace (assets/, dashboard/, .agents/,
+AGENTS.md, LICENSE, .gitignore ...) are never overwritten unless --overwrite is
+given; the target may not be, or lie inside, the framework checkout itself.
 """
 
 import os
@@ -14,14 +18,27 @@ import json
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(__file__))
 
-def bootstrap_new_project(target_dir):
+def _is_inside(path, parent):
+    try:
+        return os.path.commonpath([os.path.normcase(path), os.path.normcase(parent)]) == os.path.normcase(parent)
+    except ValueError:  # different drives
+        return False
+
+def bootstrap_new_project(target_dir, overwrite=False):
+    """Install the framework into target_dir; returns False (touching nothing) if refused."""
     target_dir = os.path.abspath(target_dir)
     print(f"\n=======================================================")
     print(f"10-Agent Swarm Framework Initializer")
     print(f"Target Directory: {target_dir}")
     print(f"=======================================================\n")
 
-    os.makedirs(target_dir, exist_ok=True)
+    if _is_inside(os.path.realpath(target_dir), os.path.realpath(SOURCE_ROOT)):
+        print("[ERROR] The target is, or lies inside, the framework checkout itself; "
+              "choose a separate folder.")
+        return False
+    if os.path.exists(target_dir) and not os.path.isdir(target_dir):
+        print("[ERROR] The target exists and is not a directory.")
+        return False
 
     # 1. Copy Core Manifestos & Playbooks
     items_to_copy = [
@@ -38,6 +55,23 @@ def bootstrap_new_project(target_dir):
         "LICENSE",
         ".gitignore"
     ]
+
+    conflicts = [
+        item for item in items_to_copy
+        if os.path.exists(os.path.join(SOURCE_ROOT, item))
+        and os.path.lexists(os.path.join(target_dir, item))
+    ]
+    # The initial status file is written unconditionally further down.
+    if os.path.lexists(os.path.join(target_dir, "specs", "swarm-status.json")):
+        conflicts.append("specs/swarm-status.json")
+    if conflicts and not overwrite:
+        print("[ERROR] These already exist in the target and would be replaced:")
+        for item in conflicts:
+            print(f"        {item}")
+        print("Nothing was changed. Re-run with --overwrite to replace them.")
+        return False
+
+    os.makedirs(target_dir, exist_ok=True)
 
     for item in items_to_copy:
         src = os.path.join(SOURCE_ROOT, item)
@@ -200,10 +234,17 @@ def bootstrap_new_project(target_dir):
     print(f"   Double-click 'office.bat' or run: python dashboard/serve.py")
     print(f"3. Start Phase 1 Discovery with Agent 01 (Product Manager):")
     print(f"   Prompt: 'Halo, kita mulai project baru ini. Apa yang perlu kita siapkan?'\n")
+    return True
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    overwrite = "--overwrite" in args
+    args = [arg for arg in args if arg != "--overwrite"]
+    if not args:
+        print("Usage: python setup_project.py <target_directory> [--overwrite]")
+        print("Example: python setup_project.py C:\\Users\\LENOVO\\Downloads\\projek-baru")
+        return 1
+    return 0 if bootstrap_new_project(args[0], overwrite=overwrite) else 2
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python setup_project.py <target_directory>")
-        print("Example: python setup_project.py C:\\Users\\LENOVO\\Downloads\\projek-baru")
-        sys.exit(1)
-    bootstrap_new_project(sys.argv[1])
+    sys.exit(main())
